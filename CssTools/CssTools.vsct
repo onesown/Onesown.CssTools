@@ -11,6 +11,14 @@
 		<!-- Place the group inside the Tools menu -->
 		<Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS"/>
 	  </Group>
+	  <!-- Context menu group for file items (e.g. .css files) -->
+	  <Group guid="guidCssToolsCmdSet" id="CssToolsProjectContextGroup" priority="0x0600">
+		<Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_ITEMNODE"/>
+	  </Group>
+	  <!-- Context menu group for folder nodes -->
+	  <Group guid="guidCssToolsCmdSet" id="CssToolsFolderContextGroup" priority="0x0600">
+		<Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_FOLDERNODE"/>
+	  </Group>
 	</Groups>
 
 	<Buttons>
@@ -21,14 +29,57 @@
 		  <CommandName>ShowCssVariables</CommandName>
 		</Strings>
 	  </Button>
+
+	  <Button guid="guidCssToolsCmdSet" id="ExcludeFromCssToolsCommandId" priority="0x0101" type="Button">
+		<Parent guid="guidCssToolsCmdSet" id="CssToolsProjectContextGroup"/>
+		<CommandFlag>DynamicVisibility</CommandFlag>
+		<CommandFlag>DefaultInvisible</CommandFlag>
+		<Strings>
+		  <ButtonText>Exclude from CssTools</ButtonText>
+		  <CommandName>ExcludeFromCssTools</CommandName>
+		</Strings>
+	  </Button>
+
+	  <Button guid="guidCssToolsCmdSet" id="IncludeInCssToolsCommandId" priority="0x0102" type="Button">
+		<Parent guid="guidCssToolsCmdSet" id="CssToolsProjectContextGroup"/>
+		<CommandFlag>DynamicVisibility</CommandFlag>
+		<CommandFlag>DefaultInvisible</CommandFlag>
+		<Strings>
+		  <ButtonText>Include in CssTools</ButtonText>
+		  <CommandName>IncludeInCssTools</CommandName>
+		</Strings>
+	  </Button>
+
+	  <!-- Same commands duplicated for folder context menu -->
+	  <Button guid="guidCssToolsCmdSet" id="ExcludeFolderFromCssToolsCommandId" priority="0x0101" type="Button">
+		<Parent guid="guidCssToolsCmdSet" id="CssToolsFolderContextGroup"/>
+		<Strings>
+		  <ButtonText>Exclude from CssTools</ButtonText>
+		  <CommandName>ExcludeFolderFromCssTools</CommandName>
+		</Strings>
+	  </Button>
+
+	  <Button guid="guidCssToolsCmdSet" id="IncludeFolderInCssToolsCommandId" priority="0x0102" type="Button">
+		<Parent guid="guidCssToolsCmdSet" id="CssToolsFolderContextGroup"/>
+		<Strings>
+		  <ButtonText>Include in CssTools</ButtonText>
+		  <CommandName>IncludeFolderInCssTools</CommandName>
+		</Strings>
+	  </Button>
 	</Buttons>
   </Commands>
 
   <Symbols>
 	<GuidSymbol name="guidCssToolsPackage" value="{0fb472c4-bf6c-4b68-9722-3b655fb74c06}"/>
 	<GuidSymbol name="guidCssToolsCmdSet" value="{a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d}">
-	  <IDSymbol name="CssToolsMenuGroup"         value="0x1020"/>
-	  <IDSymbol name="ShowCssVariablesCommandId" value="0x0100"/>
+	  <IDSymbol name="CssToolsMenuGroup"                  value="0x1020"/>
+	  <IDSymbol name="CssToolsProjectContextGroup"        value="0x1021"/>
+	  <IDSymbol name="CssToolsFolderContextGroup"         value="0x1022"/>
+	  <IDSymbol name="ShowCssVariablesCommandId"          value="0x0100"/>
+	  <IDSymbol name="ExcludeFromCssToolsCommandId"       value="0x0101"/>
+	  <IDSymbol name="IncludeInCssToolsCommandId"         value="0x0102"/>
+	  <IDSymbol name="ExcludeFolderFromCssToolsCommandId" value="0x0103"/>
+	  <IDSymbol name="IncludeFolderInCssToolsCommandId"   value="0x0104"/>
 	</GuidSymbol>
   </Symbols>
 

@@ -53,5 +53,28 @@ namespace CssTools
                 iEndIndex   = 0,
             });
         }
+
+        /// <summary>
+        /// Opens <paramref name="filePath"/> in the VS editor without navigating to a specific line.
+        /// Must be called on the UI thread.
+        /// </summary>
+        public static void OpenFile(string filePath)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            var openDoc = (IVsUIShellOpenDocument?)Package.GetGlobalService(typeof(SVsUIShellOpenDocument));
+            if (openDoc == null) return;
+
+            Guid logicalView = VSConstants.LOGVIEWID.TextView_guid;
+            openDoc.OpenDocumentViaProject(
+                filePath,
+                ref logicalView,
+                out _,
+                out _,
+                out _,
+                out IVsWindowFrame? frame);
+
+            frame?.Show();
+        }
     }
 }

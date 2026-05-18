@@ -56,14 +56,23 @@ namespace CssTools
                 foreach (string varName in byName.Keys.OrderBy(k => k))
                 {
                     var defs = byName[varName];
-                    // Show "(n definitions)" only when there really are multiple
                     string header = defs.Count > 1
                         ? $"{varName}  ({defs.Count} definitions)"
                         : varName;
                     sb.AppendLine(header);
 
+                    // Group by project (same order as tooltip)
+                    string? currentProject = null;
                     foreach (var def in defs)
-                        sb.AppendLine($"    {def.Value}   [{System.IO.Path.GetFileName(def.FilePath)}:{def.LineNumber}]  {def.FilePath}");
+                    {
+                        if (!StringComparer.OrdinalIgnoreCase.Equals(def.ProjectName, currentProject))
+                        {
+                            currentProject = def.ProjectName;
+                            string label = string.IsNullOrEmpty(currentProject) ? "(unknown project)" : currentProject;
+                            sb.AppendLine($"  [{label}]");
+                        }
+                        sb.AppendLine($"    {def.Value}   {System.IO.Path.GetFileName(def.FilePath)}:{def.LineNumber}   {def.FilePath}");
+                    }
 
                     sb.AppendLine();
                 }

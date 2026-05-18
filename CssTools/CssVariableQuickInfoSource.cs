@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
@@ -61,31 +62,41 @@ namespace CssTools
             if (defs.Count == 0)
                 return Task.FromResult<QuickInfoItem?>(null);
 
-            // Build a ContainerElement: header row + one row per definition.
+            // Build a ContainerElement: header + one project group each containing its definitions.
             var rows = new List<object>();
 
-            // Header: variable name
+            // Header: variable name (bold/keyword style)
             rows.Add(new ClassifiedTextElement(
                 new ClassifiedTextRun(PredefinedClassificationTypeNames.Keyword, varName)));
 
+            // Group definitions by project, preserving the sort order from GetDefinitions().
+            string? currentProject = null;
             foreach (CssVariableDefinition def in defs)
             {
+                // Project header – only when the project changes
+                if (!StringComparer.OrdinalIgnoreCase.Equals(def.ProjectName, currentProject))
+                {
+                    currentProject = def.ProjectName;
+                    string label = string.IsNullOrEmpty(currentProject) ? "(unknown project)" : currentProject;
+
+                    // Visually raised: two spaces of padding + PreprocessorKeyword gives a distinct colour
+                    rows.Add(new ClassifiedTextElement(
+                        new ClassifiedTextRun(
+                            PredefinedClassificationTypeNames.PreprocessorKeyword,
+                            $"  {label}")));
+                }
+
                 string fileName = Path.GetFileName(def.FilePath);
-                string location = $"{fileName}:{def.LineNumber}";
-
-                // Capture for the lambda
                 string capturedFilePath = def.FilePath;
-                int capturedLine = def.LineNumber;
+                int    capturedLine     = def.LineNumber;
 
-                // Value run – plain text
                 var valueRun = new ClassifiedTextRun(
                     PredefinedClassificationTypeNames.String,
-                    $"  {def.Value}");
+                    $"    {def.Value}");
 
-                // Location run – rendered as a hyperlink-style run with a navigation action
                 var locationRun = new ClassifiedTextRun(
                     PredefinedClassificationTypeNames.Other,
-                    $"    ↳ {location}",
+                    $"  ↳ {fileName}:{def.LineNumber}",
                     () => ThreadHelper.JoinableTaskFactory.Run(async () =>
                     {
                         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -94,6 +105,26 @@ namespace CssTools
                     tooltip: capturedFilePath);
 
                 rows.Add(new ClassifiedTextElement(valueRun, locationRun));
+            }
+
+            // Footer: link to .csstools.json – separated by an empty line, left-aligned
+            string? configPath = CssToolsConfig.Instance.ConfigFilePath;
+            if (configPath != null)
+            {
+                // Empty spacer line
+                rows.Add(new ClassifiedTextElement(
+                    new ClassifiedTextRun(PredefinedClassificationTypeNames.Other, " ")));
+
+                rows.Add(new ClassifiedTextElement(
+                    new ClassifiedTextRun(
+                        PredefinedClassificationTypeNames.Comment,
+                        "⚙ .csstools.json",
+                        () => ThreadHelper.JoinableTaskFactory.Run(async () =>
+                        {
+                            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                            NavigationHelper.OpenFile(configPath);
+                        }),
+                        tooltip: configPath)));
             }
 
             var container = new ContainerElement(ContainerElementStyle.Stacked, rows);
