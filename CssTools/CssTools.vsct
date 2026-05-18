@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable"
+			  xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+
+  <Commands package="guidCssToolsPackage">
+	<Groups>
+	  <Group guid="guidCssToolsCmdSet" id="CssToolsMenuGroup" priority="0x0600">
+		<!-- Place the group inside the Tools menu -->
+		<Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS"/>
+	  </Group>
+	</Groups>
+
+	<Buttons>
+	  <Button guid="guidCssToolsCmdSet" id="ShowCssVariablesCommandId" priority="0x0100" type="Button">
+		<Parent guid="guidCssToolsCmdSet" id="CssToolsMenuGroup"/>
+		<Strings>
+		  <ButtonText>Show CSS Variables</ButtonText>
+		  <CommandName>ShowCssVariables</CommandName>
+		</Strings>
+	  </Button>
+	</Buttons>
+  </Commands>
+
+  <Symbols>
+	<GuidSymbol name="guidCssToolsPackage" value="{0fb472c4-bf6c-4b68-9722-3b655fb74c06}"/>
+	<GuidSymbol name="guidCssToolsCmdSet" value="{a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d}">
+	  <IDSymbol name="CssToolsMenuGroup"         value="0x1020"/>
+	  <IDSymbol name="ShowCssVariablesCommandId" value="0x0100"/>
+	</GuidSymbol>
+  </Symbols>
+
+</CommandTable>

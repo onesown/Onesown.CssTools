@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="CssTools/CssTools.csproj">
+    <Deploy />
+  </Project>
+</Solution>
