@@ -30,7 +30,17 @@ Wenn der Benutzer über einen CSS-Klassennamen hovert – in `.css`, `.html`, `.
 - Erkennt alle Klassenselektoren inklusive Nachfahren-Kombinatoren (`.a .b { }`), Ketten (`.a.b`), Pseudo-Klassen etc.
 - Dedupliziert gleiche Klasse auf gleicher Zeile (Chained Selektoren)
 
-### 3. CSS Variable Store
+### 3. CSS-Variablen-Autocomplete (IntelliSense)
+Sobald der User `--` tippt – in `.css`, `.cs`, `.razor`/`.blazor` oder `.html` – erscheint eine Completion-Liste mit allen gescannten CSS-Variablen:
+- **Trigger**: exakt `--` als Prefix (ein einzelnes `-` öffnet die Liste **nicht**)
+- **Exklusiv**: `ExclusivelyProvidesItems` + `DoDismiss()` in `InitializeCompletion` schließt den nativen CSS-Language-Service-Completer **synchron auf dem UI-Thread**, bevor die async-Session startet
+- **Insert-Text**: Auswahl eines Items fügt `var(--varname)` ein (nicht nur den Namen)
+- **Suffix**: erster bekannter Wert der Variable wird neben dem Namen angezeigt
+- **Description-Tooltip**: gleicher Aufbau wie QuickInfo – Projektname als Gruppe, darunter Wert + Datei:Zeile
+- **Implementierung**: `CssVariableCompletionSource` (`IAsyncCompletionSource`) + `CssVariableCompletionSourceProvider` (`IAsyncCompletionSourceProvider`, MEF, alle Content-Types)
+- **Wichtig**: `ICompletionBroker` wird per MEF in den Provider importiert und an die Source weitergegeben; `DoDismiss()` muss in `InitializeCompletion` (UI-Thread) aufgerufen werden – **nicht** in `GetCompletionContextAsync` (Background-Thread), sonst wird die eigene Session abgebrochen
+
+### 4. CSS Variable Store
 `CssVariableStore` ist ein thread-sicherer Singleton. Er speichert alle Vorkommen jeder `--variable` mit:
 - `FilePath` (absoluter Pfad)
 - `ProjectName` (Name des `.csproj` ohne Extension)
@@ -39,16 +49,16 @@ Wenn der Benutzer über einen CSS-Klassennamen hovert – in `.css`, `.html`, `.
 
 Zwei interne Dictionaries: `_fileDefinitions` und `_fileNameIndex` (beide keyed by Dateipfad).
 
-### 4. CSS Class Store
+### 5. CSS Class Store
 `CssClassStore` ist ein thread-sicherer Singleton analog zu `CssVariableStore`. Er speichert alle Klassen-Selektoren aus `.css`-Dateien als `CssClassDefinition` (FilePath, ProjectName, LineNumber). Kein Value-Feld (bei Klassen nicht sinnvoll). Sortierung in `GetDefinitions`: Projekt → Zeilennummer → Dateiname.
 
-### 5. Startup-Scan
+### 6. Startup-Scan
 Das Package (`CssToolsPackage`) lädt bei Lösungsöffnung automatisch (`[ProvideAutoLoad]` mit `SolutionExistsAndFullyLoaded`). Es iteriert alle Projekte der Solution via `IVsSolution` + `IVsHierarchy` und scannt jede `.css`-Datei in **beide** Stores (`CssVariableStore` und `CssClassStore`).
 
-### 6. FileSystemWatcher
+### 7. FileSystemWatcher
 Pro Projektverzeichnis läuft ein `FileSystemWatcher` auf `*.css` (rekursiv) – Änderungen, Neuanlagen, Umbenennungen und Löschungen aktualisieren **beide** Stores sofort.
 
-### 7. Konfiguration (`.csstools.json`)
+### 8. Konfiguration (`.csstools.json`)
 Im **Solution-Root** (neben der `.sln`) kann eine `.csstools.json` liegen:
 ```json
 {
@@ -61,7 +71,7 @@ Im **Solution-Root** (neben der `.sln`) kann eine `.csstools.json` liegen:
 - Wird beim Start geladen; ein `FileSystemWatcher` auf den Solution-Root erkennt Änderungen und ruft `Reload()` → `PurgeExcluded()` auf beiden Stores auf
 - Wichtig: `IsInitialized`-Flag verhindert, dass der MEF-Provider Puffer scannt bevor die Config geladen ist
 
-### 8. Menübefehl „Show CSS Variables"
+### 9. Menübefehl „Show CSS Variables"
 Unter **Tools → Show CSS Variables** werden alle bekannten Variablen in ein dediziertes Output-Window-Pane geschrieben, gruppiert nach Variablenname → Projektname → Datei:Zeile.
 
 ## Dateistruktur
@@ -74,7 +84,9 @@ Unter **Tools → Show CSS Variables** werden alle bekannten Variablen in ein de
 | `CssToolsConfig.cs` | Config-Singleton, JSON-Parser (`JavaScriptSerializer`), Glob→Regex-Matcher |
 | `CssVariableQuickInfoSource.cs` | Hover-Logik für CSS-Variablen, baut ContainerElement mit Projekt-Gruppen |
 | `CssVariableQuickInfoSourceProvider.cs` | MEF-Export für CSS-Variablen, alle relevanten Content-Types |
-| `CssClassQuickInfoSource.cs` | Hover-Logik für CSS-Klassen, Razor-aware Attribut-Scanner |
+| `CssVariableCompletionSource.cs` | `IAsyncCompletionSource`: Trigger-Erkennung, Item-Liste, Description-Tooltip, Legacy-Session-Dismiss |
+| `CssVariableCompletionSourceProvider.cs` | MEF-Export `IAsyncCompletionSourceProvider`, importiert `ICompletionBroker` |
+| `CssClassQuickInfoSource.cs` |
 | `CssClassQuickInfoSourceProvider.cs` | MEF-Export für CSS-Klassen, alle relevanten Content-Types; scannt nur CSS-Buffer |
 | `NavigationHelper.cs` | Öffnet Datei + springt zu Zeilennummer via `IVsUIShellOpenDocument` |
 | `ShowVariablesCommand.cs` | Menübefehl + Output-Window-Pane |
@@ -85,7 +97,7 @@ Unter **Tools → Show CSS Variables** werden alle bekannten Variablen in ein de
 - **MEF Content-Types**: `CSS`, `text/x-css`, `CSharp`, `Razor`, `RazorCSharp`, `RazorCoreCSharp`, `HTML`, `htmlx`, `HTMLX`
 - **Projektname-Erhaltung**: Der MEF-Provider kennt keinen Projektnamen. Er liest ihn via `GetProjectName(filePath)` aus dem jeweiligen Store und überschreibt ihn nie mit `""`.
 - **Glob-Matching**: Case-insensitive, `**` = beliebige Ordnertiefe, `*` = beliebige Zeichen ohne `/`
-- **Assembly-Referenzen**: `System.ComponentModel.Composition` (MEF), `System.Web.Extensions` (JavaScriptSerializer)
+- **Assembly-Referenzen**: `System.ComponentModel.Composition` (MEF), `System.Web.Extensions` (JavaScriptSerializer), `PresentationFramework` + `PresentationCore` (WPF, für `IWpfTextView.VisualElement`)
 - **Zeilennummer-Ermittlung**: Binärsuche auf einer vorgefertigten Line-Start-Tabelle aus dem Dateiinhalt
 - **Config-Watcher** liegt im Solution-Root, **nicht** in Projektordnern
 - **CSS-Klassen-Buffer-Scan**: `CssClassQuickInfoSourceProvider` scannt nur CSS-Buffer (Klassen sind dort definiert); HTML/Razor-Buffer werden nicht gescannt, liefern aber Tooltips via Store-Lookup
