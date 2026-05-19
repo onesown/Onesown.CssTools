@@ -6,6 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Language.Intellisense;
 using Microsoft.VisualStudio.Language.StandardClassification;
+using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.Core.Imaging;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Adornments;
@@ -62,49 +64,73 @@ namespace CssTools
             if (defs.Count == 0)
                 return Task.FromResult<QuickInfoItem?>(null);
 
+            // Determine the active file path so its definitions appear first.
+            string? activeFilePath = null;
+            if (_buffer.Properties.TryGetProperty(typeof(ITextDocument), out ITextDocument activeDoc))
+                activeFilePath = activeDoc.FilePath;
+
+            // Re-sort: entries from the active file first, then original order.
+            var sortedDefs = new List<CssVariableDefinition>(defs);
+            if (!string.IsNullOrEmpty(activeFilePath))
+            {
+                sortedDefs.Sort((a, b) =>
+                {
+                    bool aActive = StringComparer.OrdinalIgnoreCase.Equals(a.FilePath, activeFilePath);
+                    bool bActive = StringComparer.OrdinalIgnoreCase.Equals(b.FilePath, activeFilePath);
+                    if (aActive != bActive) return aActive ? -1 : 1;
+                    int c = StringComparer.OrdinalIgnoreCase.Compare(a.ProjectName, b.ProjectName);
+                    if (c != 0) return c;
+                    return a.LineNumber.CompareTo(b.LineNumber);
+                });
+            }
+
             // Build a ContainerElement: header + one project group each containing its definitions.
             var rows = new List<object>();
 
-            // Header: variable name (bold/keyword style)
-            rows.Add(new ClassifiedTextElement(
-                new ClassifiedTextRun(PredefinedClassificationTypeNames.Keyword, varName)));
-
-            // Group definitions by project, preserving the sort order from GetDefinitions().
+            // Group definitions by project, preserving the sort order from sortedDefs.
             string? currentProject = null;
-            foreach (CssVariableDefinition def in defs)
+            bool firstProject = true;
+            foreach (CssVariableDefinition def in sortedDefs)
             {
                 // Project header – only when the project changes
                 if (!StringComparer.OrdinalIgnoreCase.Equals(def.ProjectName, currentProject))
                 {
                     currentProject = def.ProjectName;
                     string label = string.IsNullOrEmpty(currentProject) ? "(unknown project)" : currentProject;
-
-                    // Visually raised: two spaces of padding + PreprocessorKeyword gives a distinct colour
+                    if (!firstProject)
+                        rows.Add(new ClassifiedTextElement(
+                            new ClassifiedTextRun(PredefinedClassificationTypeNames.Other, " ")));
+                    firstProject = false;
                     rows.Add(new ClassifiedTextElement(
                         new ClassifiedTextRun(
                             PredefinedClassificationTypeNames.PreprocessorKeyword,
-                            $"  {label}")));
+                            label)));
                 }
 
                 string fileName = Path.GetFileName(def.FilePath);
                 string capturedFilePath = def.FilePath;
                 int    capturedLine     = def.LineNumber;
 
-                var valueRun = new ClassifiedTextRun(
-                    PredefinedClassificationTypeNames.String,
-                    $"    {def.Value}");
-
                 var locationRun = new ClassifiedTextRun(
-                    PredefinedClassificationTypeNames.Other,
-                    $"  ↳ {fileName}:{def.LineNumber}",
+                    PredefinedClassificationTypeNames.SymbolDefinition,
+                    $"{fileName}:{def.LineNumber}",
                     () => ThreadHelper.JoinableTaskFactory.Run(async () =>
                     {
                         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                         NavigationHelper.NavigateTo(capturedFilePath, capturedLine);
                     }),
-                    tooltip: capturedFilePath);
+                    tooltip: capturedFilePath,
+                    style: ClassifiedTextRunStyle.Bold | ClassifiedTextRunStyle.Italic);
 
-                rows.Add(new ClassifiedTextElement(valueRun, locationRun));
+                rows.Add(new ContainerElement(
+                    ContainerElementStyle.Wrapped,
+                    new ImageElement(new ImageId(KnownMonikers.StyleSheet.Guid, KnownMonikers.StyleSheet.Id)),
+                    new ClassifiedTextElement(locationRun)));
+
+                rows.Add(new ClassifiedTextElement(
+                    new ClassifiedTextRun(PredefinedClassificationTypeNames.MarkupAttribute, $"    {varName}"),
+                    new ClassifiedTextRun(PredefinedClassificationTypeNames.Other, ": "),
+                    new ClassifiedTextRun(PredefinedClassificationTypeNames.Keyword, def.Value, ClassifiedTextRunStyle.Bold)));
             }
 
             // Footer: link to .csstools.json – separated by an empty line, left-aligned

@@ -83,6 +83,16 @@ namespace CssTools
             }
 
             var key = filePath ?? string.Empty;
+
+            // If the caller doesn't know the project name (e.g. MEF buffer scan before package init),
+            // keep the name already stored by the startup scan, or resolve via directory mapping.
+            if (string.IsNullOrEmpty(projectName))
+            {
+                projectName = GetProjectName(key);
+                if (string.IsNullOrEmpty(projectName))
+                    projectName = CssProjectResolver.Resolve(key) ?? string.Empty;
+            }
+
             var lineStarts = BuildLineStartTable(content);
 
             var nameIndex = new Dictionary<string, List<CssVariableDefinition>>(StringComparer.OrdinalIgnoreCase);

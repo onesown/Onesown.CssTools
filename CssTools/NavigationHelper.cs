@@ -45,13 +45,16 @@ namespace CssTools
 
             int targetLine = Math.Max(0, lineNumber - 1); // convert to 0-based
             textView.SetCaretPos(targetLine, 0);
-            textView.EnsureSpanVisible(new TextSpan
-            {
-                iStartLine = targetLine,
-                iEndLine   = targetLine,
-                iStartIndex = 0,
-                iEndIndex   = 0,
-            });
+
+            // Scroll so the target line appears roughly centered.
+            // GetScrollInfo can return unreliable visibleLines values (e.g. very large numbers
+            // for collapsed/minimized views), so we clamp it to a sane range (10–60).
+            // 1 = vertical scrollbar (ScrollBarType.sbVertical in native API)
+            const int verticalBar = 1;
+            textView.GetScrollInfo(verticalBar, out _, out int visibleLines, out _, out _);
+            int clampedVisible = Math.Min(60, Math.Max(10, visibleLines));
+            int scrollToLine   = Math.Max(0, targetLine - clampedVisible / 2);
+            textView.SetScrollPosition(verticalBar, scrollToLine);
         }
 
         /// <summary>

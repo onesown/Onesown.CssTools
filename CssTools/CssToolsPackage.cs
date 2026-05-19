@@ -115,6 +115,7 @@ namespace CssTools
                 ? Path.GetFileNameWithoutExtension(projectPath)
                 : projectDir;
 
+            CssProjectResolver.RegisterProject(projectDir, projectName);
             CssToolsLogger.Log($"Scanning project: {projectName}");
 
             if (project is IVsHierarchy hier)
@@ -133,6 +134,7 @@ namespace CssTools
                 File.Exists(path))
             {
                 CssVariableStore.Instance.ScanFile(path, projectName);
+                CssClassStore.Instance.ScanFile(path, projectName);
             }
             hier.GetProperty(itemId, (int)__VSHPROPID.VSHPROPID_FirstChild, out object? childObj);
             uint childId = childObj is int i ? (uint)i : VSConstants.VSITEMID_NIL;
@@ -167,16 +169,19 @@ namespace CssTools
                 watcher.Renamed += (_, e) =>
                 {
                     CssVariableStore.Instance.RemoveFile(e.OldFullPath);
+                    CssClassStore.Instance.RemoveFile(e.OldFullPath);
                     if (e.FullPath.EndsWith(".css", StringComparison.OrdinalIgnoreCase))
                     {
                         CssToolsLogger.Log($"CSS renamed: {e.OldName} → {e.Name}");
                         CssVariableStore.Instance.ScanFile(e.FullPath);
+                        CssClassStore.Instance.ScanFile(e.FullPath);
                     }
                 };
                 watcher.Deleted += (_, e) =>
                 {
                     CssToolsLogger.Log($"CSS deleted: {e.Name}");
                     CssVariableStore.Instance.RemoveFile(e.FullPath);
+                    CssClassStore.Instance.RemoveFile(e.FullPath);
                 };
 
                 _watchers.Add(watcher);
@@ -217,6 +222,8 @@ namespace CssTools
                     {
                         CssToolsLogger.Log("Config changed – reloading .csstools.json…");
                         CssToolsConfig.Instance.Reload();
+                        CssVariableStore.Instance.PurgeExcluded();
+                        CssClassStore.Instance.PurgeExcluded();
                         // Re-scan all project CSS files so previously-excluded files get picked up again.
                         RescanAllProjectCssFiles();
                     };
@@ -234,6 +241,7 @@ namespace CssTools
             string projectName = ResolveProjectName(e.FullPath);
             CssToolsLogger.Log($"CSS changed: {e.Name}");
             CssVariableStore.Instance.ScanFile(e.FullPath, projectName);
+            CssClassStore.Instance.ScanFile(e.FullPath, projectName);
         }
 
         /// <summary>Looks up the project name for a file path using the dir-to-project mapping.</summary>
@@ -269,7 +277,10 @@ namespace CssTools
                 if (!Directory.Exists(dir)) continue;
 
                 foreach (string cssFile in Directory.EnumerateFiles(dir, "*.css", SearchOption.AllDirectories))
+                {
                     CssVariableStore.Instance.ScanFile(cssFile, projectName);
+                    CssClassStore.Instance.ScanFile(cssFile, projectName);
+                }
             }
             CssToolsLogger.Log("Rescan complete.");
         }
