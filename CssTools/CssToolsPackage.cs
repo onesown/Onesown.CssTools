@@ -63,6 +63,8 @@ namespace CssTools
         /// <summary>
         /// Enumerates all projects in the open solution, pre-scans every *.css file,
         /// and returns the set of project root directories for file watching.
+        /// VS-API calls (hierarchy traversal) run on the UI thread; file I/O and regex
+        /// scanning run on a background thread so VS stays responsive during startup.
         /// </summary>
         private async Task<(HashSet<string> ProjectDirs, string? SolutionDir)> ScanSolutionCssFilesAsync(CancellationToken cancellationToken)
         {
@@ -82,6 +84,8 @@ namespace CssTools
             solution.GetProjectEnum((uint)__VSENUMPROJFLAGS.EPF_LOADEDINSOLUTION, Guid.Empty, out IEnumHierarchies? hierEnum);
             if (hierEnum == null) return (dirs, solutionDir);
 
+            // Phase 1 (UI thread): collect all CSS file paths from VS project hierarchies.
+            var filesToScan = new List<(string FilePath, string ProjectName)>();
             var hierarchies = new IVsHierarchy[1];
             while (true)
             {
@@ -90,7 +94,7 @@ namespace CssTools
 
                 if (hierarchies[0] is IVsProject project)
                 {
-                    string? dir = ScanProjectCssFiles(project, out string? projectName);
+                    string? dir = CollectProjectCssFiles(project, filesToScan, out string? projectName);
                     if (dir != null)
                     {
                         dirs.Add(dir);
@@ -99,11 +103,25 @@ namespace CssTools
                     }
                 }
             }
+
+            // Phase 2 (background thread): file I/O + regex – does NOT block the UI thread.
+            await Task.Run(() =>
+            {
+                foreach (var (filePath, projectName) in filesToScan)
+                {
+                    CssVariableStore.Instance.ScanFile(filePath, projectName);
+                    CssClassStore.Instance.ScanFile(filePath, projectName);
+                }
+            }, cancellationToken);
+
             return (dirs, solutionDir);
         }
 
-        // Returns the project root directory so we can watch it.
-        private static string? ScanProjectCssFiles(IVsProject project, out string? projectName)
+        // Returns the project root directory and appends discovered CSS file paths to filesToScan.
+        private static string? CollectProjectCssFiles(
+            IVsProject project,
+            List<(string FilePath, string ProjectName)> filesToScan,
+            out string? projectName)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
@@ -119,29 +137,36 @@ namespace CssTools
             CssToolsLogger.Log($"Scanning project: {projectName}");
 
             if (project is IVsHierarchy hier)
-                ScanHierarchyItems(hier, project, VSConstants.VSITEMID_ROOT, projectName);
+                CollectHierarchyCssFiles(hier, project, VSConstants.VSITEMID_ROOT, projectName, filesToScan);
 
             return projectDir;
         }
 
-        private static void ScanHierarchyItems(IVsHierarchy hier, IVsProject project, uint itemId, string projectName)
+        // Recursively walks the project hierarchy and collects .css file paths (no File I/O).
+        private static void CollectHierarchyCssFiles(
+            IVsHierarchy hier,
+            IVsProject project,
+            uint itemId,
+            string projectName,
+            List<(string, string)> filesToScan)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
             if (project.GetMkDocument(itemId, out string? path) == 0 &&
                 path != null &&
                 path.EndsWith(".css", StringComparison.OrdinalIgnoreCase) &&
+                !path.EndsWith(".min.css", StringComparison.OrdinalIgnoreCase) &&
                 File.Exists(path))
             {
-                CssVariableStore.Instance.ScanFile(path, projectName);
-                CssClassStore.Instance.ScanFile(path, projectName);
+                filesToScan.Add((path, projectName));
             }
+
             hier.GetProperty(itemId, (int)__VSHPROPID.VSHPROPID_FirstChild, out object? childObj);
             uint childId = childObj is int i ? (uint)i : VSConstants.VSITEMID_NIL;
 
             while (childId != VSConstants.VSITEMID_NIL)
             {
-                ScanHierarchyItems(hier, project, childId, projectName);
+                CollectHierarchyCssFiles(hier, project, childId, projectName, filesToScan);
                 hier.GetProperty(childId, (int)__VSHPROPID.VSHPROPID_NextSibling, out object? sibObj);
                 childId = sibObj is int s ? (uint)s : VSConstants.VSITEMID_NIL;
             }
@@ -170,7 +195,8 @@ namespace CssTools
                 {
                     CssVariableStore.Instance.RemoveFile(e.OldFullPath);
                     CssClassStore.Instance.RemoveFile(e.OldFullPath);
-                    if (e.FullPath.EndsWith(".css", StringComparison.OrdinalIgnoreCase))
+                    if (e.FullPath.EndsWith(".css", StringComparison.OrdinalIgnoreCase) &&
+                        !e.FullPath.EndsWith(".min.css", StringComparison.OrdinalIgnoreCase))
                     {
                         CssToolsLogger.Log($"CSS renamed: {e.OldName} → {e.Name}");
                         CssVariableStore.Instance.ScanFile(e.FullPath);
@@ -238,6 +264,7 @@ namespace CssTools
 
         private void OnCssFileChanged(object sender, FileSystemEventArgs e)
         {
+            if (e.FullPath.EndsWith(".min.css", StringComparison.OrdinalIgnoreCase)) return;
             string projectName = ResolveProjectName(e.FullPath);
             CssToolsLogger.Log($"CSS changed: {e.Name}");
             CssVariableStore.Instance.ScanFile(e.FullPath, projectName);
@@ -278,6 +305,7 @@ namespace CssTools
 
                 foreach (string cssFile in Directory.EnumerateFiles(dir, "*.css", SearchOption.AllDirectories))
                 {
+                    if (cssFile.EndsWith(".min.css", StringComparison.OrdinalIgnoreCase)) continue;
                     CssVariableStore.Instance.ScanFile(cssFile, projectName);
                     CssClassStore.Instance.ScanFile(cssFile, projectName);
                 }

@@ -64,6 +64,12 @@ namespace CssTools
 
             try
             {
+                var info = new FileInfo(filePath);
+                if (info.Length > 2 * 1024 * 1024)
+                {
+                    CssToolsLogger.Log($"Skipped (> 2 MB): {System.IO.Path.GetFileName(filePath)}");
+                    return;
+                }
                 string content = File.ReadAllText(filePath);
                 ScanText(filePath, projectName, content);
             }
