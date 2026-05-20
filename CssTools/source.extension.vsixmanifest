@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="CssTools.6b0ca620-3d6b-41e7-8a47-89a11b05893e" Version="1.2" Language="en-US" Publisher="onesown" />
+    <Identity Id="CssTools.6b0ca620-3d6b-41e7-8a47-89a11b05893e" Version="1.3" Language="en-US" Publisher="onesown" />
     <DisplayName>CssTools</DisplayName>
     <Description xml:space="preserve">Hover tooltips for CSS Custom Properties (--variables) and CSS class names in .css, .razor, .html and .cs files. Clickable links jump directly to the definition.</Description>
     <Icon>icon.png</Icon>

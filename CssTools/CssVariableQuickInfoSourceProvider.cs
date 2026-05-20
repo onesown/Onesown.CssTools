@@ -9,7 +9,7 @@ namespace CssTools
     /// <summary>
     /// MEF provider that wires <see cref="CssVariableQuickInfoSource"/> into the VS editor
     /// for CSS, C#, Razor/Blazor and HTML content buffers.
-    /// Also triggers a re-scan whenever the buffer text changes.
+    /// Re-scans CSS buffers when the file is saved (FileActionOccurred), not on every keystroke.
     /// </summary>
     [Export(typeof(IAsyncQuickInfoSourceProvider))]
     [Name("CSS Variable QuickInfo Provider")]
@@ -30,8 +30,14 @@ namespace CssTools
             // Perform an initial scan of the buffer content.
             ScanBuffer(textBuffer);
 
-            // Re-scan on every text change so variable values stay up-to-date.
-            textBuffer.Changed += (_, e) => ScanBuffer(textBuffer);
+            // Re-scan only when the file is actually saved – not on every keystroke.
+            // The FileSystemWatcher in CssToolsPackage handles on-disk changes from external tools.
+            if (textBuffer.Properties.TryGetProperty(typeof(ITextDocument), out ITextDocument doc))
+                doc.FileActionOccurred += (_, e) =>
+                {
+                    if (e.FileActionType == FileActionTypes.ContentSavedToDisk)
+                        ScanBuffer(textBuffer);
+                };
 
             return new CssVariableQuickInfoSource(textBuffer);
         }
@@ -46,9 +52,12 @@ namespace CssTools
 
             string filePath = doc.FilePath ?? string.Empty;
 
-            // Preserve the project name that the startup scan already resolved;
-            // the MEF provider has no project context so we never overwrite with empty.
+            // Only scan files that belong to a known project directory (whitelist).
+            // This implicitly blocks all temp files regardless of their naming scheme.
             string projectName = CssVariableStore.Instance.GetProjectName(filePath);
+            if (string.IsNullOrEmpty(projectName))
+                projectName = CssProjectResolver.Resolve(filePath) ?? string.Empty;
+            if (string.IsNullOrEmpty(projectName)) return;
 
             string content = buffer.CurrentSnapshot.GetText();
             CssVariableStore.Instance.ScanText(filePath, projectName, content);

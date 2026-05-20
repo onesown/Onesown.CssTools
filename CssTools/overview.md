@@ -63,8 +63,3 @@ Place a `.csstools.json` next to your `.sln` to control which files are scanned:
 - Visual Studio 2022 **17.14** or newer (including Visual Studio 2026)
 - .NET Framework 4.5 or newer
 
----
-
-## Source Code
-
-[github.com/onesown/Onesown.CssTools](https://github.com/onesown/Onesown.CssTools)

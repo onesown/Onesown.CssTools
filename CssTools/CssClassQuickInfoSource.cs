@@ -67,6 +67,10 @@ namespace CssTools
 
             if (_isCssBuffer)
             {
+                // Only show tooltip when cursor is on a selector (outside declaration blocks).
+                if (IsInsideDeclarationBlock(_buffer.CurrentSnapshot, triggerPoint.Value.Position))
+                    return Task.FromResult<QuickInfoItem?>(null);
+
                 className = FindTokenUnderCursor(lineText, posOnLine, out span, line, _buffer.CurrentSnapshot);
                 // Token is not a known class → check tag selectors
                 if (className != null && CssClassStore.Instance.GetDefinitions(className).Count == 0)
@@ -650,6 +654,41 @@ namespace CssTools
             // Fallback: plain text
             return new ClassifiedTextElement(
                 new ClassifiedTextRun(PredefinedClassificationTypeNames.Other, displayText));
+        }
+
+        /// <summary>
+        /// Determines whether the given position in the snapshot is inside a CSS declaration block
+        /// (between { and }) by counting unbalanced braces from the start of the document.
+        /// Ignores braces inside comments.
+        /// </summary>
+        private static bool IsInsideDeclarationBlock(ITextSnapshot snapshot, int position)
+        {
+            string text = snapshot.GetText(0, position);
+            int depth = 0;
+            bool inComment = false;
+
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (inComment)
+                {
+                    if (i + 1 < text.Length && text[i] == '*' && text[i + 1] == '/')
+                    {
+                        inComment = false;
+                        i++;
+                    }
+                    continue;
+                }
+                if (i + 1 < text.Length && text[i] == '/' && text[i + 1] == '*')
+                {
+                    inComment = true;
+                    i++;
+                    continue;
+                }
+                if (text[i] == '{') depth++;
+                else if (text[i] == '}') depth--;
+            }
+
+            return depth > 0;
         }
 
         public void Dispose() => _disposed = true;

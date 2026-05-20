@@ -9,7 +9,7 @@ namespace CssTools
     /// <summary>
     /// MEF provider that wires <see cref="CssClassQuickInfoSource"/> into the VS editor
     /// for CSS, C#, Razor/Blazor and HTML content buffers.
-    /// Also triggers a re-scan of <see cref="CssClassStore"/> whenever the buffer text changes.
+    /// Re-scans CSS buffers when the file is saved (FileActionOccurred), not on every keystroke.
     /// </summary>
     [Export(typeof(IAsyncQuickInfoSourceProvider))]
     [Name("CSS Class QuickInfo Provider")]
@@ -28,7 +28,14 @@ namespace CssTools
         public IAsyncQuickInfoSource? TryCreateQuickInfoSource(ITextBuffer textBuffer)
         {
             ScanBuffer(textBuffer);
-            textBuffer.Changed += (_, e) => ScanBuffer(textBuffer);
+
+            // Re-scan only when the file is actually saved – not on every keystroke.
+            if (textBuffer.Properties.TryGetProperty(typeof(ITextDocument), out ITextDocument doc))
+                doc.FileActionOccurred += (_, e) =>
+                {
+                    if (e.FileActionType == FileActionTypes.ContentSavedToDisk)
+                        ScanBuffer(textBuffer);
+                };
 
             bool isCss = textBuffer.ContentType.IsOfType("CSS")
                       || textBuffer.ContentType.IsOfType("text/x-css");
@@ -46,8 +53,14 @@ namespace CssTools
             if (!filePath.EndsWith(".css", System.StringComparison.OrdinalIgnoreCase))
                 return; // Only scan CSS buffers; non-CSS files don't define classes.
 
+            // Only scan files that belong to a known project directory (whitelist).
+            // This implicitly blocks all temp files regardless of their naming scheme.
             string projectName = CssClassStore.Instance.GetProjectName(filePath);
-            string content     = buffer.CurrentSnapshot.GetText();
+            if (string.IsNullOrEmpty(projectName))
+                projectName = CssProjectResolver.Resolve(filePath) ?? string.Empty;
+            if (string.IsNullOrEmpty(projectName)) return;
+
+            string content = buffer.CurrentSnapshot.GetText();
             CssClassStore.Instance.ScanText(filePath, projectName, content);
         }
     }
