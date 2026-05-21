@@ -28,11 +28,21 @@ namespace CssTools
 
         public static CssToolsConfig Instance => _instance.Value;
 
+        // Default values written to .csstools.json when the keys are missing.
+        private const int DefaultMaxDefinitions = 5;
+        private const int DefaultMaxCssLines    = 8;
+
         private string? _solutionDir;
         private List<Regex> _excludePatterns = new List<Regex>();
         private List<Regex> _includePatterns = new List<Regex>();
         private readonly object _lock = new object();
         private volatile bool _isInitialized;
+
+        /// <summary>Maximum number of definitions shown in a QuickInfo tooltip.</summary>
+        public int MaxDefinitions { get; private set; } = DefaultMaxDefinitions;
+
+        /// <summary>Maximum total CSS body lines shown across all definitions in a class tooltip.</summary>
+        public int MaxCssLines { get; private set; } = DefaultMaxCssLines;
 
         /// <summary>True once <see cref="Initialize"/> has been called.</summary>
         public bool IsInitialized => _isInitialized;
@@ -61,21 +71,26 @@ namespace CssTools
 
             string configPath = Path.Combine(_solutionDir, ".csstools.json");
 
-            var excludes = new List<Regex>();
-            var includes = new List<Regex>();
+            var excludes     = new List<Regex>();
+            var includes     = new List<Regex>();
+            int maxDefs      = DefaultMaxDefinitions;
+            int maxCssLines  = DefaultMaxCssLines;
 
+            Dictionary<string, object>? dict = null;
             if (File.Exists(configPath))
             {
                 try
                 {
-                    string json = File.ReadAllText(configPath);
-                    var serializer = new JavaScriptSerializer();
-                    var dict = serializer.Deserialize<Dictionary<string, object>>(json);
+                    string json      = File.ReadAllText(configPath);
+                    var serializer   = new JavaScriptSerializer();
+                    dict             = serializer.Deserialize<Dictionary<string, object>>(json);
 
                     if (dict != null)
                     {
                         excludes.AddRange(ParsePatterns(dict, "exclude"));
                         includes.AddRange(ParsePatterns(dict, "include"));
+                        maxDefs     = ParseInt(dict, "maxDefinitions",  DefaultMaxDefinitions);
+                        maxCssLines = ParseInt(dict, "maxCssLines",     DefaultMaxCssLines);
                     }
                 }
                 catch (Exception)
@@ -84,10 +99,15 @@ namespace CssTools
                 }
             }
 
+            // Write missing keys with their defaults back into the file.
+            EnsureDefaultsWritten(configPath, ref dict);
+
             lock (_lock)
             {
                 _excludePatterns = excludes;
                 _includePatterns = includes;
+                MaxDefinitions   = maxDefs;
+                MaxCssLines      = maxCssLines;
             }
 
             CssToolsLogger.Log(
@@ -134,6 +154,58 @@ namespace CssTools
         }
 
         // --- helpers ---
+
+        private static int ParseInt(Dictionary<string, object> dict, string key, int defaultValue)
+        {
+            if (dict.TryGetValue(key, out object? raw) && raw is int i)
+                return i;
+            return defaultValue;
+        }
+
+        /// <summary>
+        /// Writes any missing tooltip-config keys with their default values into the JSON file.
+        /// Creates the file if it does not exist yet.
+        /// </summary>
+        private static void EnsureDefaultsWritten(string configPath, ref Dictionary<string, object>? dict)
+        {
+            try
+            {
+                bool changed = false;
+                if (dict == null) { dict = new Dictionary<string, object>(); changed = true; }
+
+                var d = dict; // local copy to avoid ref-param-in-lambda restriction
+                if (!d.ContainsKey("maxDefinitions")) { d["maxDefinitions"] = DefaultMaxDefinitions; changed = true; }
+                if (!d.ContainsKey("maxCssLines"))    { d["maxCssLines"]    = DefaultMaxCssLines;    changed = true; }
+                if (!d.ContainsKey("exclude"))        { d["exclude"]        = new System.Collections.ArrayList(); changed = true; }
+                if (!d.ContainsKey("include"))        { d["include"]        = new System.Collections.ArrayList(); changed = true; }
+
+                if (!changed) return;
+
+                var serializer = new JavaScriptSerializer();
+                WriteFormattedJson(configPath, d, serializer);
+            }
+            catch (Exception)
+            {
+                // Non-critical – silently skip if file cannot be written.
+            }
+        }
+
+        private static void WriteFormattedJson(string path, Dictionary<string, object> dict, JavaScriptSerializer serializer)
+        {
+            // Emit a human-readable JSON file with basic indentation.
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("{");
+            int total = dict.Count, idx = 0;
+            foreach (var kv in dict)
+            {
+                idx++;
+                string comma = idx < total ? "," : "";
+                string valueJson = serializer.Serialize(kv.Value);
+                sb.AppendLine($"  \"{kv.Key}\": {valueJson}{comma}");
+            }
+            sb.Append("}");
+            File.WriteAllText(path, sb.ToString(), System.Text.Encoding.UTF8);
+        }
 
         private static IEnumerable<Regex> ParsePatterns(Dictionary<string, object> dict, string key)
         {

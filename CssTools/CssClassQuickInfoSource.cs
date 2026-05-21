@@ -133,13 +133,19 @@ namespace CssTools
             string headerText = isTag ? className : $".{className}";
 
             // Gesamtzeilenbudget für alle CSS-Blöcke über alle Definitionen hinweg
-            const int totalLineBudget = 35;
-            int remainingLines = totalLineBudget;
+            const int totalLineBudget  = 8;  // kept as fallback floor
+            int effectiveBudget = Math.Max(totalLineBudget, CssToolsConfig.Instance.MaxCssLines);
+            const int MaxDefinitions   = 5;   // kept as fallback
+            int remainingLines = CssToolsConfig.Instance.MaxCssLines > 0 ? CssToolsConfig.Instance.MaxCssLines : totalLineBudget;
+            int totalDefs      = sortedDefs.Count;
+            int shownDefs      = Math.Min(totalDefs, CssToolsConfig.Instance.MaxDefinitions > 0 ? CssToolsConfig.Instance.MaxDefinitions : MaxDefinitions);
+            int hiddenDefs     = totalDefs - shownDefs;
 
             string? currentProject = null;
             bool firstProject = true;
-            foreach (CssClassDefinition def in sortedDefs)
+            for (int di = 0; di < shownDefs; di++)
             {
+                CssClassDefinition def = sortedDefs[di];
                 if (!StringComparer.OrdinalIgnoreCase.Equals(def.ProjectName, currentProject))
                 {
                     currentProject = def.ProjectName;
@@ -194,6 +200,12 @@ namespace CssTools
                 // Wenn Budget aufgebraucht, restliche Definitionen nur noch als Link ohne Block
                 if (remainingLines <= 0)
                     remainingLines = 0;
+            }
+
+            if (hiddenDefs > 0)
+            {
+                rows.Add(new ClassifiedTextElement(
+                    new ClassifiedTextRun(PredefinedClassificationTypeNames.Other, $"    … (+{hiddenDefs} weitere)")));
             }
 
             var container = new ContainerElement(ContainerElementStyle.Stacked, rows);

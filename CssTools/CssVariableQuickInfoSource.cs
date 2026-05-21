@@ -87,11 +87,18 @@ namespace CssTools
             // Build a ContainerElement: header + one project group each containing its definitions.
             var rows = new List<object>();
 
+            // Limit the number of definitions shown to avoid oversized tooltips.
+            const int MaxDefinitions = 5; // kept as fallback
+            int totalDefs    = sortedDefs.Count;
+            int shownDefs    = Math.Min(totalDefs, CssToolsConfig.Instance.MaxDefinitions > 0 ? CssToolsConfig.Instance.MaxDefinitions : MaxDefinitions);
+            int hiddenDefs   = totalDefs - shownDefs;
+
             // Group definitions by project, preserving the sort order from sortedDefs.
             string? currentProject = null;
             bool firstProject = true;
-            foreach (CssVariableDefinition def in sortedDefs)
+            for (int di = 0; di < shownDefs; di++)
             {
+                CssVariableDefinition def = sortedDefs[di];
                 // Project header – only when the project changes
                 if (!StringComparer.OrdinalIgnoreCase.Equals(def.ProjectName, currentProject))
                 {
@@ -133,7 +140,13 @@ namespace CssTools
                     new ClassifiedTextRun(PredefinedClassificationTypeNames.Keyword, def.Value, ClassifiedTextRunStyle.Bold)));
             }
 
-            // Footer: link to .csstools.json – separated by an empty line, left-aligned
+            if (hiddenDefs > 0)
+            {
+                rows.Add(new ClassifiedTextElement(
+                    new ClassifiedTextRun(PredefinedClassificationTypeNames.Other, $"    … (+{hiddenDefs} weitere)")));
+            }
+
+            // Footer: link to .csstools.json
             string? configPath = CssToolsConfig.Instance.ConfigFilePath;
             if (configPath != null)
             {
