@@ -1,4 +1,6 @@
-{
+﻿{
   "exclude": [],
-  "include": []
+  "include": [],
+  "maxDefinitions": 5,
+  "maxCssLines": 8
 }

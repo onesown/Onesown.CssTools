@@ -70,12 +70,27 @@ namespace CssTools
                     CssToolsLogger.Log($"Skipped (> 2 MB): {System.IO.Path.GetFileName(filePath)}");
                     return;
                 }
-                string content = File.ReadAllText(filePath);
+                string content = ReadFileWithRetry(filePath);
                 ScanText(filePath, projectName, content);
             }
             catch (Exception ex)
             {
                 CssToolsLogger.Log($"Could not scan {System.IO.Path.GetFileName(filePath)}: {ex.Message}");
+            }
+        }
+
+        private static string ReadFileWithRetry(string filePath, int maxAttempts = 4, int delayMs = 150)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    return File.ReadAllText(filePath);
+                }
+                catch (IOException) when (attempt < maxAttempts)
+                {
+                    System.Threading.Thread.Sleep(delayMs);
+                }
             }
         }
 

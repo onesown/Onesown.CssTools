@@ -33,6 +33,11 @@ namespace CssTools
         private System.Timers.Timer? _configReloadTimer;
         private readonly object _configTimerLock = new object();
 
+        // Debounce for CSS file change/rename events: path → timer
+        private readonly Dictionary<string, System.Timers.Timer> _cssDebounceTimers =
+            new Dictionary<string, System.Timers.Timer>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _cssDebounceTimersLock = new object();
+
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
             await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
@@ -55,6 +60,11 @@ namespace CssTools
                 {
                     _configReloadTimer?.Dispose();
                     _configReloadTimer = null;
+                }
+                lock (_cssDebounceTimersLock)
+                {
+                    foreach (var t in _cssDebounceTimers.Values) t.Dispose();
+                    _cssDebounceTimers.Clear();
                 }
             }
             base.Dispose(disposing);
@@ -193,14 +203,16 @@ namespace CssTools
                 watcher.Created += OnCssFileChanged;
                 watcher.Renamed += (_, e) =>
                 {
-                    CssVariableStore.Instance.RemoveFile(e.OldFullPath);
-                    CssClassStore.Instance.RemoveFile(e.OldFullPath);
                     if (e.FullPath.EndsWith(".css", StringComparison.OrdinalIgnoreCase) &&
                         !e.FullPath.EndsWith(".min.css", StringComparison.OrdinalIgnoreCase))
                     {
-                        CssToolsLogger.Log($"CSS renamed: {e.OldName} → {e.Name}");
-                        CssVariableStore.Instance.ScanFile(e.FullPath);
-                        CssClassStore.Instance.ScanFile(e.FullPath);
+                        DebounceCssScan(e.FullPath, $"{e.OldName} → {e.Name}", isRename: true, oldPath: e.OldFullPath);
+                    }
+                    else
+                    {
+                        // Renamed to a non-CSS name – just remove the old entry.
+                        CssVariableStore.Instance.RemoveFile(e.OldFullPath);
+                        CssClassStore.Instance.RemoveFile(e.OldFullPath);
                     }
                 };
                 watcher.Deleted += (_, e) =>
@@ -265,10 +277,41 @@ namespace CssTools
         private void OnCssFileChanged(object sender, FileSystemEventArgs e)
         {
             if (e.FullPath.EndsWith(".min.css", StringComparison.OrdinalIgnoreCase)) return;
-            string projectName = ResolveProjectName(e.FullPath);
-            CssToolsLogger.Log($"CSS changed: {e.Name}");
-            CssVariableStore.Instance.ScanFile(e.FullPath, projectName);
-            CssClassStore.Instance.ScanFile(e.FullPath, projectName);
+            DebounceCssScan(e.FullPath, e.Name, isRename: false, oldPath: null);
+        }
+
+        private void DebounceCssScan(string fullPath, string name, bool isRename, string? oldPath)
+        {
+            lock (_cssDebounceTimersLock)
+            {
+                if (_cssDebounceTimers.TryGetValue(fullPath, out var existing))
+                {
+                    existing.Stop();
+                    existing.Start();
+                    return;
+                }
+
+                var timer = new System.Timers.Timer(300) { AutoReset = false };
+                _cssDebounceTimers[fullPath] = timer;
+                timer.Elapsed += (_, __) =>
+                {
+                    lock (_cssDebounceTimersLock) { _cssDebounceTimers.Remove(fullPath); }
+                    timer.Dispose();
+                    Task.Run(() =>
+                    {
+                        if (isRename && oldPath != null)
+                        {
+                            CssVariableStore.Instance.RemoveFile(oldPath);
+                            CssClassStore.Instance.RemoveFile(oldPath);
+                        }
+                        CssToolsLogger.Log(isRename ? $"CSS renamed: {name}" : $"CSS changed: {name}");
+                        string projectName = ResolveProjectName(fullPath);
+                        CssVariableStore.Instance.ScanFile(fullPath, projectName);
+                        CssClassStore.Instance.ScanFile(fullPath, projectName);
+                    });
+                };
+                timer.Start();
+            }
         }
 
         /// <summary>Looks up the project name for a file path using the dir-to-project mapping.</summary>
