@@ -1,0 +1,25 @@
+# Baut jeden Push und Pull Request im Release-Modus (ohne Veröffentlichung), damit Fehler sofort auffallen.
+name: Build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: microsoft/setup-msbuild@v3
+
+      - name: Bauen
+        run: |
+          msbuild CssTools/CssTools.csproj /restore /p:Configuration=Release /p:DeployExtension=false /nologo /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Release-Build fehlgeschlagen.' }
+

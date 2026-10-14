@@ -1,0 +1,88 @@
+# Baut bei einem Tag wie v1.2.3 die VSIX und hängt sie an ein GitHub-Release.
+# Das Onesown Desktop Dashboard findet sie dort (genau eine .vsix je Release) und installiert sie.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  # Manuell für einen schon gepushten Tag, etwa wenn ein Lauf wiederholt werden soll.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Vorhandener Tag, z. B. v1.2.3'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      PROJECT: CssTools/CssTools.csproj
+      MANIFEST: CssTools/source.extension.vsixmanifest
+      ASSET_NAME: CssTools
+      TITLE: CssTools
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: microsoft/setup-msbuild@v3
+
+      # Die Version kommt nur aus dem Tag; im Repo bleibt der Stand des letzten Commits.
+      - name: Version aus dem Tag ins Manifest schreiben
+        id: version
+        run: |
+          if ($env:TAG -notmatch '^v(\d+(\.\d+){1,3})$') { throw "Tag '$env:TAG' ist keine Version wie v1.2.3." }
+          $version = $Matches[1]
+          $text = [System.IO.File]::ReadAllText($env:MANIFEST)
+          $pattern = '(<Identity\b[^>]*?\bVersion=")[^"]*(")'
+          if ([regex]::Matches($text, $pattern).Count -ne 1) { throw "Identity/@Version in $env:MANIFEST nicht eindeutig gefunden." }
+          $text = [regex]::Replace($text, $pattern, "`${1}$version`${2}")
+          [System.IO.File]::WriteAllText($env:MANIFEST, $text, [System.Text.UTF8Encoding]::new($true))
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Bauen
+        run: |
+          msbuild $env:PROJECT /restore /p:Configuration=Release /p:DeployExtension=false /nologo /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Release-Build fehlgeschlagen.' }
+
+      # Prüft die gebaute VSIX auf die Tag-Version und benennt sie einheitlich <Name>-<Version>.vsix.
+      - name: VSIX bereitstellen
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $projectDir = Split-Path -Parent (Resolve-Path -LiteralPath $env:PROJECT).Path
+          $vsix = @(Get-ChildItem -Path (Join-Path $projectDir 'bin/Release') -Filter *.vsix -Recurse)
+          if ($vsix.Count -ne 1) { throw "Genau eine .vsix erwartet, gefunden: $($vsix.Count)." }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($vsix[0].FullName)
+          try {
+            $reader = [System.IO.StreamReader]::new($archive.GetEntry('extension.vsixmanifest').Open())
+            try { $built = ([xml]$reader.ReadToEnd()).PackageManifest.Metadata.Identity.Version } finally { $reader.Dispose() }
+          } finally { $archive.Dispose() }
+          if ($built -ne $env:VERSION) { throw "Die VSIX hat Version $built statt $env:VERSION." }
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item -LiteralPath $vsix[0].FullName -Destination "dist/$env:ASSET_NAME-$env:VERSION.vsix"
+
+      # Gibt es das Release schon (wiederholter Lauf), wird nur die VSIX ersetzt.
+      - name: GitHub-Release erstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $asset = "dist/$env:ASSET_NAME-$env:VERSION.vsix"
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG $asset --clobber
+          } else {
+            gh release create $env:TAG $asset --title "$env:TITLE $env:VERSION" --generate-notes --verify-tag
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Release konnte nicht veröffentlicht werden.' }
