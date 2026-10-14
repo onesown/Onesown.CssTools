@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/vsix-publish",
+  "categories": [ "coding" ],
+  "identity": {
+    "internalName": "CssTools11"
+  },
+  "overview": "CssTools/overview.md",
+  "priceCategory": "free",
+  "publisher": "onesown",
+  "private": false,
+  "qna": true
+}
